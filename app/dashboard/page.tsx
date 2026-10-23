@@ -109,7 +109,7 @@ export default async function DashboardPage() {
     dailyVerifies.push({ day: dayLabel, count })
   }
 
-  const stats = {
+  const stats: any = {
     total: totalRes.count ?? 0,
     active: activeRes.count ?? 0,
     expired: expiredRes.count ?? 0,

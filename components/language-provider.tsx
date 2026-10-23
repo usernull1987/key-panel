@@ -39,7 +39,8 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     document.documentElement.lang = newLocale
   }
 
-  const t = translations[locale]
+  const t = locale === 'en' ? translations.en : translations.th
+
 
   return (
     <LanguageContext.Provider value={{ locale, setLocale, t }}>

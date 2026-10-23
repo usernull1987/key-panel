@@ -16,7 +16,7 @@ interface Log {
   success: boolean
   message: string | null
   created_at: string
-  LicenseKey?: { key_code: string } | null
+  LicenseKey?: { key_code: string }[] | null  // ⭐ เปลี่ยนเป็น array
 }
 
 interface RecentKey {

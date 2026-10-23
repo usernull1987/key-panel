@@ -26,12 +26,7 @@ export default function RootLayout({
   return (
     <html lang="th" className={lineSeed.variable} suppressHydrationWarning>
       <body className={lineSeed.className + ' antialiased min-h-screen'}>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange={false}
-        >
+        <ThemeProvider>
           <LanguageProvider>
             <ConfirmProvider>
               {children}
