@@ -4,9 +4,6 @@ import { supabaseAdmin } from '@/lib/supabase'
 import { generateKeyCode, hashKey } from '@/lib/keys'
 import { notify } from '@/lib/notify'
 
-// ═══════════════════════════════════════════
-// GET — list keys
-// ═══════════════════════════════════════════
 export async function GET(req: Request) {
   const session = await getSession()
   if (!session) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
@@ -60,9 +57,6 @@ export async function GET(req: Request) {
   })
 }
 
-// ═══════════════════════════════════════════
-// POST — create keys
-// ═══════════════════════════════════════════
 export async function POST(req: Request) {
   const session = await getSession()
   if (!session) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
@@ -74,19 +68,23 @@ export async function POST(req: Request) {
       prefix = 'NX',
       duration_value = 30,
       duration_unit = 'day',
+      is_lifetime = false,
       max_hwid = 1,
       note = '',
       quantity = 1,
       is_test = false,
-      custom_key = '',        // ถ้าต้องการกำหนด key เอง
+      custom_key = '',
     } = body
 
     if (quantity < 1 || quantity > 100) {
       return NextResponse.json({ message: 'จำนวนต้อง 1-100' }, { status: 400 })
     }
-    if (duration_value < 1) {
+    
+    // ⭐ ตรวจสอบ duration_value เฉพาะตอนที่ไม่ใช่ lifetime
+    if (!is_lifetime && duration_value < 1) {
       return NextResponse.json({ message: 'ระยะเวลาต้อง ≥ 1' }, { status: 400 })
     }
+    
     if (!['second','minute','hour','day','month','year'].includes(duration_unit)) {
       return NextResponse.json({ message: 'หน่วยเวลาไม่ถูกต้อง' }, { status: 400 })
     }
@@ -94,6 +92,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ message: 'หมวดหมู่ไม่ถูกต้อง' }, { status: 400 })
     }
 
+    // ⭐ กำหนดค่า duration_value เป็น 0 ถ้าเป็น Lifetime
+    const finalDurationValue = is_lifetime ? 0 : duration_value
     const createdKeys: string[] = []
 
     // === สร้างแบบกำหนดเอง (1 คีย์) ===
@@ -103,15 +103,22 @@ export async function POST(req: Request) {
         return NextResponse.json({ message: 'รูปแบบ key ไม่ถูกต้อง (A-Z, 0-9, -, 6-32 ตัว)' }, { status: 400 })
       }
       const keyHash = hashKey(code)
+      
       const { error } = await supabaseAdmin.from('LicenseKey').insert({
         key_code: code,
         key_hash: keyHash,
-        category, prefix: prefix.toUpperCase(),
-        duration_value, duration_unit,
-        max_hwid, note, is_test,
+        category, 
+        prefix: prefix.toUpperCase(),
+        duration_value: finalDurationValue,  // ⭐ ใช้ค่าที่คำนวณแล้ว
+        duration_unit,
+        max_hwid, 
+        note, 
+        is_test,
         created_by: session.userId,
       })
+      
       if (error) {
+        console.error('Insert error:', error)
         if (error.code === '23505') return NextResponse.json({ message: 'Key นี้มีอยู่แล้ว' }, { status: 409 })
         return NextResponse.json({ message: error.message }, { status: 500 })
       }
@@ -125,14 +132,20 @@ export async function POST(req: Request) {
           attempts++
           const keyCode = generateKeyCode(prefix)
           const keyHash = hashKey(keyCode)
+          
           const { error } = await supabaseAdmin.from('LicenseKey').insert({
             key_code: keyCode,
             key_hash: keyHash,
-            category, prefix: prefix.toUpperCase(),
-            duration_value, duration_unit,
-            max_hwid, note, is_test,
+            category, 
+            prefix: prefix.toUpperCase(),
+            duration_value: finalDurationValue,  // ⭐ ใช้ค่าที่คำนวณแล้ว
+            duration_unit,
+            max_hwid, 
+            note, 
+            is_test,
             created_by: session.userId,
           })
+          
           if (!error) {
             createdKeys.push(keyCode)
             success = true
@@ -146,11 +159,11 @@ export async function POST(req: Request) {
       }
     }
 
-    // แจ้งเตือน
     if (createdKeys.length > 0) {
+      const durationLabel = is_lifetime ? 'ถาวร' : `${duration_value} ${duration_unit}`
       await notify({
         title: 'สร้าง Keys ใหม่',
-        message: `สร้าง ${createdKeys.length} keys (${category}, ${duration_value} ${duration_unit}${is_test ? ', TEST' : ''})`,
+        message: `สร้าง ${createdKeys.length} keys (${category}, ${durationLabel}${is_test ? ', TEST' : ''})`,
         type: 'success',
       })
     }

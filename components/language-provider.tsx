@@ -9,7 +9,6 @@ interface LanguageContextType {
   t: Translation
 }
 
-// ⭐ ค่า default — ใช้เมื่อไม่มี Provider
 const defaultContext: LanguageContextType = {
   locale: 'th',
   setLocale: () => {},
@@ -20,7 +19,6 @@ const LanguageContext = createContext<LanguageContextType>(defaultContext)
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>('th')
-  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
     const saved = localStorage.getItem('locale') as Locale | null
@@ -30,7 +28,6 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       const browserLang = navigator.language.toLowerCase()
       setLocaleState(browserLang.startsWith('th') ? 'th' : 'en')
     }
-    setMounted(true)
   }, [])
 
   const setLocale = (newLocale: Locale) => {
@@ -39,8 +36,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     document.documentElement.lang = newLocale
   }
 
-  const t = locale === 'en' ? translations.en : translations.th
-
+  const t: Translation = locale === 'en' ? translations.en : translations.th
 
   return (
     <LanguageContext.Provider value={{ locale, setLocale, t }}>
@@ -49,7 +45,6 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   )
 }
 
-// ⭐ ไม่ throw — คืน default context แทน
 export function useLanguage() {
   return useContext(LanguageContext)
 }

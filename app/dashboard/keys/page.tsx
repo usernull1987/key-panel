@@ -9,8 +9,8 @@ import {
   Key, Plus, Copy, Eye, EyeOff, Trash2, Ban,
   CheckCircle2, Clock, AlertCircle, RefreshCw,
   Search, X, Loader2, CalendarPlus, FlaskConical,
-  ChevronRight, Filter, MoreHorizontal, Activity,
-  TrendingUp, Zap, ListChecks,
+  ChevronRight, MoreHorizontal, Activity, ListChecks,
+  Infinity as InfinityIcon,
 } from 'lucide-react'
 import { DURATION_UNITS, DurationUnit } from '@/lib/keys'
 
@@ -48,6 +48,17 @@ const CATEGORIES = [
   { value: 'dev', label: 'Dev', dot: 'bg-purple-500', bg: 'bg-purple-50 dark:bg-purple-500/10', text: 'text-purple-700 dark:text-purple-300' },
 ]
 
+const DURATION_PRESETS = [
+  { label: '1 ชั่วโมง', value: 1, unit: 'hour' as DurationUnit },
+  { label: '1 วัน', value: 1, unit: 'day' as DurationUnit },
+  { label: '7 วัน', value: 7, unit: 'day' as DurationUnit },
+  { label: '30 วัน', value: 30, unit: 'day' as DurationUnit },
+  { label: '1 เดือน', value: 1, unit: 'month' as DurationUnit },
+  { label: '3 เดือน', value: 3, unit: 'month' as DurationUnit },
+  { label: '6 เดือน', value: 6, unit: 'month' as DurationUnit },
+  { label: '1 ปี', value: 1, unit: 'year' as DurationUnit },
+]
+
 export default function KeysPage() {
   const confirm = useConfirm()
   const [keys, setKeys] = useState<LicenseKey[]>([])
@@ -62,11 +73,11 @@ export default function KeysPage() {
   const [actionMenu, setActionMenu] = useState<string | null>(null)
   const [extendKey, setExtendKey] = useState<LicenseKey | null>(null)
 
-  // Create form
   const [newCategory, setNewCategory] = useState('standard')
   const [newPrefix, setNewPrefix] = useState('NX')
   const [newDurationValue, setNewDurationValue] = useState('30')
   const [newDurationUnit, setNewDurationUnit] = useState<DurationUnit>('day')
+  const [newIsLifetime, setNewIsLifetime] = useState(false)
   const [newMaxHwid, setNewMaxHwid] = useState('1')
   const [newNote, setNewNote] = useState('')
   const [newQuantity, setNewQuantity] = useState('1')
@@ -103,7 +114,6 @@ export default function KeysPage() {
     fetchKeys()
   }, [fetchKeys])
 
-  // Close action menu on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (!(e.target as HTMLElement).closest('[data-action-menu]')) {
@@ -123,8 +133,9 @@ export default function KeysPage() {
         body: JSON.stringify({
           category: newCategory,
           prefix: newPrefix,
-          duration_value: parseInt(newDurationValue) || 1,
+          duration_value: newIsLifetime ? 0 : parseInt(newDurationValue) || 1,
           duration_unit: newDurationUnit,
+          is_lifetime: newIsLifetime,
           max_hwid: parseInt(newMaxHwid) || 1,
           note: newNote.trim(),
           quantity: customKey ? 1 : parseInt(newQuantity) || 1,
@@ -218,6 +229,39 @@ export default function KeysPage() {
     })
   }
 
+  const handleDeleteAll = () => {
+    const filterLabel =
+      filterStatus === 'all' ? 'ทั้งหมด' :
+      filterStatus === 'active' ? 'ใช้งานอยู่' :
+      filterStatus === 'pending' ? 'รอใช้' :
+      filterStatus === 'expired' ? 'หมดอายุ' :
+      filterStatus === 'revoked' ? 'ถูกระงับ' : ''
+
+    confirm({
+      title: `ลบคีย์${filterLabel}ทั้งหมด?`,
+      description: `จะลบคีย์ที่${filterLabel}ทั้งหมด — ไม่สามารถกู้คืนได้!\n\nข้อมูล HWID และ Log ทั้งหมดจะถูกลบ`,
+      type: 'danger',
+      confirmText: 'ลบทั้งหมด',
+      onConfirm: async () => {
+        try {
+          const res = await fetch('/api/keys/bulk-delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filter: filterStatus }),
+          })
+          const json = await res.json()
+          if (!res.ok) throw new Error(json.message)
+          toast.success(json.message || 'ลบสำเร็จ')
+          setPage(1)
+          fetchKeys()
+        } catch (err: any) {
+          toast.error(err.message || 'ลบไม่สำเร็จ')
+          throw err
+        }
+      },
+    })
+  }
+
   const copy = (text: string) => {
     navigator.clipboard.writeText(text)
     toast.success('คัดลอกแล้ว')
@@ -233,6 +277,7 @@ export default function KeysPage() {
   const maskKey = (code: string) => code.slice(0, 8) + '••••-••••-' + code.slice(-4)
   const isExpired = (k: LicenseKey) => k.expires_at && new Date(k.expires_at) < new Date()
   const isPending = (k: LicenseKey) => !k.first_used_at && k.is_active
+  const isLifetime = (k: LicenseKey) => k.duration_value === 0
 
   const getStatus = (k: LicenseKey) => {
     if (!k.is_active) return { label: 'Revoked', color: 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-400 border-red-200 dark:border-red-500/30' }
@@ -253,6 +298,11 @@ export default function KeysPage() {
     })
   }
 
+  const formatDuration = (k: LicenseKey) => {
+    if (isLifetime(k)) return 'ถาวร'
+    return `${k.duration_value} ${k.duration_unit}`
+  }
+
   const resetForm = () => {
     setCreatedKeys(null)
     setCustomKey('')
@@ -260,6 +310,7 @@ export default function KeysPage() {
     setNewPrefix('NX')
     setNewDurationValue('30')
     setNewDurationUnit('day')
+    setNewIsLifetime(false)
     setNewMaxHwid('1')
     setNewNote('')
     setNewQuantity('1')
@@ -268,7 +319,6 @@ export default function KeysPage() {
 
   return (
     <div>
-      {/* ═══ Header ═══ */}
       <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">License Keys</h1>
@@ -277,20 +327,30 @@ export default function KeysPage() {
             เวลาจะเริ่มนับเมื่อ Key ถูกใช้ครั้งแรก (Asia/Bangkok)
           </p>
         </div>
-        <Button
-          onClick={() => {
-            resetForm()
-            setShowCreateModal(true)
-          }}
-          className="h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-lg shadow-blue-500/30 hover:-translate-y-0.5 transition-all"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          สร้าง Keys
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={handleDeleteAll}
+            disabled={loading || keys.length === 0}
+            variant="outline"
+            className="h-10 rounded-xl border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 hover:-translate-y-0.5 transition-all"
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            ลบทั้งหมด
+          </Button>
+          <Button
+            onClick={() => {
+              resetForm()
+              setShowCreateModal(true)
+            }}
+            className="h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-lg shadow-blue-500/30 hover:-translate-y-0.5 transition-all"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            สร้าง Keys
+          </Button>
+        </div>
       </div>
 
-      {/* ═══ Search + Refresh ═══ */}
-      <div className="mb-4 flex gap-2">
+      <div className="mb-4 flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <input
@@ -318,7 +378,6 @@ export default function KeysPage() {
         </button>
       </div>
 
-      {/* ═══ Status Tabs ═══ */}
       <div className="mb-4 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         <div className="inline-flex p-1 rounded-xl bg-slate-100 dark:bg-white/[0.04] gap-1">
           {STATUS_TABS.map((tab) => {
@@ -343,7 +402,6 @@ export default function KeysPage() {
         </div>
       </div>
 
-      {/* ═══ Table ═══ */}
       <div className="rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0f0f0f] overflow-hidden">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
@@ -366,7 +424,6 @@ export default function KeysPage() {
           </div>
         ) : (
           <>
-            {/* Desktop Table */}
             <div className="hidden lg:block overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 dark:bg-white/[0.02] border-b border-slate-200 dark:border-white/[0.06]">
@@ -414,6 +471,11 @@ export default function KeysPage() {
                                 TEST
                               </span>
                             )}
+                            {isLifetime(k) && (
+                              <span className="rounded bg-green-100 dark:bg-green-500/20 px-1.5 py-0.5 text-[9px] font-bold text-green-700 dark:text-green-400">
+                                LIFETIME
+                              </span>
+                            )}
                           </div>
                           {k.note && (
                             <p className="text-[10px] text-slate-400 mt-0.5 truncate max-w-xs">{k.note}</p>
@@ -444,12 +506,21 @@ export default function KeysPage() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex flex-col">
-                            <span className={'text-[11px] ' + (isExpired(k) ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-slate-500 dark:text-slate-400')}>
-                              {formatDateTime(k.expires_at)}
-                            </span>
-                            <span className="text-[9px] text-slate-400">
-                              {k.duration_value} {k.duration_unit}
-                            </span>
+                            {isLifetime(k) ? (
+                              <span className="text-[11px] font-medium text-green-600 dark:text-green-400 flex items-center gap-1">
+                                <InfinityIcon className="h-3 w-3" />
+                                ถาวร
+                              </span>
+                            ) : (
+                              <>
+                                <span className={'text-[11px] ' + (isExpired(k) ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-slate-500 dark:text-slate-400')}>
+                                  {formatDateTime(k.expires_at)}
+                                </span>
+                                <span className="text-[9px] text-slate-400">
+                                  {k.duration_value} {k.duration_unit}
+                                </span>
+                              </>
+                            )}
                           </div>
                         </td>
                         <td className="px-4 py-3">
@@ -515,7 +586,6 @@ export default function KeysPage() {
               </table>
             </div>
 
-            {/* Mobile Cards */}
             <div className="lg:hidden divide-y divide-slate-100 dark:divide-white/[0.04]">
               {keys.map((k) => {
                 const status = getStatus(k)
@@ -523,7 +593,6 @@ export default function KeysPage() {
                 const catInfo = CATEGORIES.find((c) => c.value === k.category)
                 return (
                   <div key={k.id} className="p-4 hover:bg-slate-50/50 dark:hover:bg-white/[0.02] transition-colors">
-                    {/* Row 1: Key + Status */}
                     <div className="flex items-start justify-between gap-2 mb-2">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <code className="font-mono text-sm font-medium text-slate-900 dark:text-white">
@@ -538,13 +607,15 @@ export default function KeysPage() {
                         {k.is_test && (
                           <span className="rounded bg-purple-100 dark:bg-purple-500/20 px-1 py-0.5 text-[9px] font-bold text-purple-700 dark:text-purple-400">TEST</span>
                         )}
+                        {isLifetime(k) && (
+                          <span className="rounded bg-green-100 dark:bg-green-500/20 px-1 py-0.5 text-[9px] font-bold text-green-700 dark:text-green-400">LIFETIME</span>
+                        )}
                       </div>
                       <span className={'inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium whitespace-nowrap ' + status.color}>
                         {status.label}
                       </span>
                     </div>
 
-                    {/* Row 2: Category + HWID */}
                     <div className="flex items-center gap-2 mb-3">
                       <div className={'inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 ' + catInfo?.bg}>
                         <div className={'h-1.5 w-1.5 rounded-full ' + catInfo?.dot} />
@@ -554,11 +625,10 @@ export default function KeysPage() {
                         HWID: {k.KeyHwid?.length || 0}/{k.max_hwid}
                       </span>
                       <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                        {k.duration_value} {k.duration_unit}
+                        {formatDuration(k)}
                       </span>
                     </div>
 
-                    {/* Row 3: Dates */}
                     <div className="grid grid-cols-2 gap-2 mb-3 text-[10px]">
                       <div>
                         <p className="text-slate-400 uppercase tracking-wider mb-0.5">เริ่มใช้</p>
@@ -566,13 +636,18 @@ export default function KeysPage() {
                       </div>
                       <div>
                         <p className="text-slate-400 uppercase tracking-wider mb-0.5">หมดอายุ</p>
-                        <p className={isExpired(k) ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-slate-700 dark:text-slate-300'}>
-                          {formatDateTime(k.expires_at)}
-                        </p>
+                        {isLifetime(k) ? (
+                          <p className="text-green-600 dark:text-green-400 font-medium flex items-center gap-1">
+                            <InfinityIcon className="h-3 w-3" /> ถาวร
+                          </p>
+                        ) : (
+                          <p className={isExpired(k) ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-slate-700 dark:text-slate-300'}>
+                            {formatDateTime(k.expires_at)}
+                          </p>
+                        )}
                       </div>
                     </div>
 
-                    {/* Row 4: Actions */}
                     <div className="flex items-center gap-2">
                       <Link
                         href={'/dashboard/keys/' + k.id}
@@ -613,7 +688,6 @@ export default function KeysPage() {
           </>
         )}
 
-        {/* Pagination */}
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.01]">
             <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -639,7 +713,6 @@ export default function KeysPage() {
         )}
       </div>
 
-      {/* ═══ CREATE MODAL ═══ */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="absolute inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm" onClick={() => !creating && setShowCreateModal(false)} />
@@ -735,28 +808,99 @@ export default function KeysPage() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
-                      <Clock className="h-3 w-3" />
-                      ระยะเวลา <span className="text-slate-400 font-normal">(เริ่มนับเมื่อใช้ครั้งแรก)</span>
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <input
-                        type="number"
-                        value={newDurationValue}
-                        onChange={(e) => setNewDurationValue(e.target.value)}
-                        min="1"
-                        className="h-10 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.03] px-3 text-sm"
-                      />
-                      <select
-                        value={newDurationUnit}
-                        onChange={(e) => setNewDurationUnit(e.target.value as DurationUnit)}
-                        className="h-10 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.03] px-3 text-sm"
-                      >
-                        {DURATION_UNITS.map((u) => (
-                          <option key={u.value} value={u.value}>{u.label}</option>
-                        ))}
-                      </select>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                        <Clock className="h-3 w-3" />
+                        ระยะเวลา
+                      </label>
+                      <span className="text-[10px] text-slate-400">เริ่มนับเมื่อใช้ครั้งแรก</span>
                     </div>
+
+                    <div className="grid grid-cols-2 gap-2 mb-2">
+                      <button
+                        type="button"
+                        onClick={() => setNewIsLifetime(false)}
+                        className={
+                          'h-9 rounded-lg border text-xs font-medium transition-all flex items-center justify-center gap-1.5 ' +
+                          (!newIsLifetime
+                            ? 'border-slate-900 dark:border-white bg-slate-900 dark:bg-white text-white dark:text-slate-900'
+                            : 'border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/[0.04]')
+                        }
+                      >
+                        <Clock className="h-3.5 w-3.5" />
+                        มีวันหมดอายุ
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewIsLifetime(true)}
+                        className={
+                          'h-9 rounded-lg border text-xs font-medium transition-all flex items-center justify-center gap-1.5 ' +
+                          (newIsLifetime
+                            ? 'border-green-500 bg-green-500 text-white'
+                            : 'border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/[0.04]')
+                        }
+                      >
+                        <InfinityIcon className="h-3.5 w-3.5" />
+                        ถาวร
+                      </button>
+                    </div>
+
+                    {!newIsLifetime && (
+                      <>
+                        <div className="grid grid-cols-2 gap-2 mb-2">
+                          <input
+                            type="number"
+                            value={newDurationValue}
+                            onChange={(e) => setNewDurationValue(e.target.value)}
+                            min="1"
+                            placeholder="จำนวน"
+                            className="h-10 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.03] px-3 text-sm"
+                          />
+                          <select
+                            value={newDurationUnit}
+                            onChange={(e) => setNewDurationUnit(e.target.value as DurationUnit)}
+                            className="h-10 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.03] px-3 text-sm"
+                          >
+                            {DURATION_UNITS.map((u) => (
+                              <option key={u.value} value={u.value}>{u.label}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="flex flex-wrap gap-1.5">
+                          {DURATION_PRESETS.map((preset) => {
+                            const active = parseInt(newDurationValue) === preset.value && newDurationUnit === preset.unit
+                            return (
+                              <button
+                                key={preset.label}
+                                type="button"
+                                onClick={() => {
+                                  setNewDurationValue(String(preset.value))
+                                  setNewDurationUnit(preset.unit)
+                                }}
+                                className={
+                                  'px-2.5 py-1 rounded-md text-[10px] font-medium border transition-all ' +
+                                  (active
+                                    ? 'border-blue-500 bg-blue-500 text-white'
+                                    : 'border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/[0.04]')
+                                }
+                              >
+                                {preset.label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </>
+                    )}
+
+                    {newIsLifetime && (
+                      <div className="rounded-lg border border-green-200 dark:border-green-500/30 bg-green-50 dark:bg-green-500/10 p-2.5 flex items-center gap-2">
+                        <InfinityIcon className="h-4 w-4 text-green-600 dark:text-green-400 shrink-0" />
+                        <p className="text-[11px] text-green-700 dark:text-green-300">
+                          Key นี้จะไม่มีวันหมดอายุ — ใช้ได้ตลอดไป
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -822,7 +966,6 @@ export default function KeysPage() {
         </div>
       )}
 
-      {/* ═══ EXTEND MODAL ═══ */}
       {extendKey && (
         <ExtendModal
           licenseKey={extendKey}
@@ -843,6 +986,7 @@ function ExtendModal({
   onClose: () => void
   onSuccess: () => void
 }) {
+  const isLifetime = licenseKey.duration_value === 0
   const [value, setValue] = useState('7')
   const [unit, setUnit] = useState<DurationUnit>('day')
   const [loading, setLoading] = useState(false)
@@ -884,36 +1028,69 @@ function ExtendModal({
           <div>
             <h3 className="text-sm font-semibold text-slate-900 dark:text-white">เพิ่มเวลา</h3>
             <p className="text-[10px] text-slate-500 dark:text-slate-400">
-              {licenseKey.first_used_at ? 'เพิ่มจากวันหมดอายุเดิม' : 'จะเพิ่มตอนใช้ครั้งแรก'}
+              {isLifetime
+                ? 'Key นี้เป็นแบบถาวรอยู่แล้ว'
+                : licenseKey.first_used_at
+                ? 'เพิ่มจากวันหมดอายุเดิม'
+                : 'จะเพิ่มตอนใช้ครั้งแรก'}
             </p>
           </div>
         </div>
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              type="number"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              min="1"
-              className="h-10 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.03] px-3 text-sm"
-            />
-            <select
-              value={unit}
-              onChange={(e) => setUnit(e.target.value as DurationUnit)}
-              className="h-10 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.03] px-3 text-sm"
-            >
-              {DURATION_UNITS.map((u) => (
-                <option key={u.value} value={u.value}>{u.label}</option>
+
+        {isLifetime ? (
+          <div className="rounded-lg border border-green-200 dark:border-green-500/30 bg-green-50 dark:bg-green-500/10 p-3 flex items-center gap-2">
+            <InfinityIcon className="h-4 w-4 text-green-600 dark:text-green-400 shrink-0" />
+            <p className="text-xs text-green-700 dark:text-green-300">
+              Key นี้ไม่มีวันหมดอายุ ไม่จำเป็นต้องเพิ่มเวลา
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="number"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                min="1"
+                className="h-10 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.03] px-3 text-sm"
+              />
+              <select
+                value={unit}
+                onChange={(e) => setUnit(e.target.value as DurationUnit)}
+                className="h-10 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.03] px-3 text-sm"
+              >
+                {DURATION_UNITS.map((u) => (
+                  <option key={u.value} value={u.value}>{u.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {DURATION_PRESETS.map((preset) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  onClick={() => {
+                    setValue(String(preset.value))
+                    setUnit(preset.unit)
+                  }}
+                  className="px-2.5 py-1 rounded-md text-[10px] font-medium border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-all"
+                >
+                  +{preset.label}
+                </button>
               ))}
-            </select>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={onClose} disabled={loading} className="flex-1 h-10 rounded-lg">ยกเลิก</Button>
+              <Button onClick={submit} disabled={loading} className="flex-1 h-10 rounded-lg bg-blue-600 hover:bg-blue-700 text-white">
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'เพิ่มเวลา'}
+              </Button>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={onClose} disabled={loading} className="flex-1 h-10 rounded-lg">ยกเลิก</Button>
-            <Button onClick={submit} disabled={loading} className="flex-1 h-10 rounded-lg bg-blue-600 hover:bg-blue-700 text-white">
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'เพิ่มเวลา'}
-            </Button>
-          </div>
-        </div>
+        )}
+
+        {isLifetime && (
+          <Button onClick={onClose} className="w-full h-10 rounded-lg mt-3">ปิด</Button>
+        )}
       </div>
     </div>
   )
